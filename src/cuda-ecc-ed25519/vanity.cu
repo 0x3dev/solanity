@@ -233,7 +233,7 @@ void __global__ vanity_scan(curandState* state, int* keys_found, int* gpu, int* 
         atomicAdd(exec_count, 1);
 
 	// SMITH - should really be passed in, but hey ho
-    	int prefix_letter_counts[MAX_PATTERNS];
+    	int suffix_letter_counts[MAX_PATTERNS];
     	for (unsigned int n = 0; n < sizeof(prefixes) / sizeof(prefixes[0]); ++n) {
         	if ( MAX_PATTERNS == n ) {
             		printf("NEVER SPEAK TO ME OR MY SON AGAIN");
@@ -241,7 +241,7 @@ void __global__ vanity_scan(curandState* state, int* keys_found, int* gpu, int* 
         	}
         	int letter_count = 0;
         	for(; prefixes[n][letter_count]!=0; letter_count++);
-        	prefix_letter_counts[n] = letter_count;
+        	suffix_letter_counts[n] = letter_count;
     	}
 
 	// Local Kernel State
@@ -391,71 +391,68 @@ void __global__ vanity_scan(curandState* state, int* keys_found, int* gpu, int* 
 
 		// Code Until here runs at 22_000_000H/s. b58enc badly needs optimization.
 
-		// We don't have access to strncmp/strlen here, I don't know
-		// what the efficient way of doing this on a GPU is, so I'll
-		// start with a dumb loop. There seem to be implementations out
-		// there of bignunm division done in parallel as a CUDA kernel
-		// so it might make sense to write a new parallel kernel to do
-		// this.
+		// MODIFIED FOR SUFFIX MATCHING
+		// Calculate the actual length of the key (find null terminator)
+		int key_len = 0;
+		for (int k = 0; k < 256 && key[k] != '\0'; ++k) {
+			key_len++;
+		}
 
-                for (int i = 0; i < sizeof(prefixes) / sizeof(prefixes[0]); ++i) {
-
-                        for (int j = 0; j<prefix_letter_counts[i]; ++j) {
-
-				// it doesn't match this prefix, no need to continue
-				if ( !(prefixes[i][j] == '?') && !(prefixes[i][j] == key[j]) ) {
+		// Check each suffix pattern
+		for (int i = 0; i < sizeof(prefixes) / sizeof(prefixes[0]); ++i) {
+			int suffix_len = suffix_letter_counts[i];
+			
+			// Skip if key is shorter than suffix
+			if (key_len < suffix_len) {
+				continue;
+			}
+			
+			// Calculate starting position for suffix comparison
+			int start_pos = key_len - suffix_len;
+			bool matches = true;
+			
+			// Compare suffix
+			for (int j = 0; j < suffix_len; ++j) {
+				// Check character at suffix position
+				if (!(prefixes[i][j] == '?') && !(prefixes[i][j] == key[start_pos + j])) {
+					matches = false;
 					break;
 				}
-
-                                // we got to the end of the prefix pattern, it matched!
-                                if ( j == ( prefix_letter_counts[i] - 1) ) {
-                                        atomicAdd(keys_found, 1);
-                                        //size_t pkeysize = 256;
-                                        //b58enc(pkey, &pkeysize, seed, 32);
-                                       
-				        // SMITH	
-					// The 'key' variable is the public key in base58 'address' format
-                                        // We display the seed in hex
-
-					// Solana stores the keyfile as seed (first 32 bytes)
-					// followed by public key (last 32 bytes)
-					// as an array of decimal numbers in json format
-
-                                        printf("GPU %d MATCH %s - ", *gpu, key);
-                                        for(int n=0; n<sizeof(seed); n++) { 
-						printf("%02x",(unsigned char)seed[n]); 
-					}
-					printf("\n");
-					
-                                        printf("[");
-					for(int n=0; n<sizeof(seed); n++) { 
-						printf("%d,",(unsigned char)seed[n]); 
-					}
-                                        for(int n=0; n<sizeof(publick); n++) {
-					        if ( n+1==sizeof(publick) ) {	
-							printf("%d",publick[n]);
-						} else {
-							printf("%d,",publick[n]);
-						}
-					}
-                                        printf("]\n");
-
-					/*
-					printf("Public: ");
-                                        for(int n=0; n<sizeof(publick); n++) { printf("%d ",publick[n]); }
-					printf("\n");
-					printf("Private: ");
-                                        for(int n=0; n<sizeof(privatek); n++) { printf("%d ",privatek[n]); }
-					printf("\n");
-					printf("Seed: ");
-                                        for(int n=0; n<sizeof(seed); n++) { printf("%d ",seed[n]); }
-					printf("\n");
-                                        */
-
-                                        break;
+			}
+			
+			// If we matched the entire suffix
+			if (matches) {
+				atomicAdd(keys_found, 1);
+				
+				// SMITH	
+				// The 'key' variable is the public key in base58 'address' format
+				// We display the seed in hex
+				
+				// Solana stores the keyfile as seed (first 32 bytes)
+				// followed by public key (last 32 bytes)
+				// as an array of decimal numbers in json format
+				
+				printf("GPU %d MATCH %s (suffix: %s) - ", *gpu, key, prefixes[i]);
+				for(int n=0; n<sizeof(seed); n++) { 
+					printf("%02x",(unsigned char)seed[n]); 
 				}
-
-                        }
+				printf("\n");
+				
+				printf("[");
+				for(int n=0; n<sizeof(seed); n++) { 
+					printf("%d,",(unsigned char)seed[n]); 
+				}
+				for(int n=0; n<sizeof(publick); n++) {
+					if ( n+1==sizeof(publick) ) {	
+						printf("%d",publick[n]);
+					} else {
+						printf("%d,",publick[n]);
+					}
+				}
+				printf("]\n");
+				
+				break; // Found a match, no need to check other patterns
+			}
 		}
 
 		// Code Until here runs at 22_000_000H/s. So the above is fast enough.
