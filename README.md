@@ -1,5 +1,7 @@
 # Find a Solana vanity address using GPUs
 
+#### Modified the code to search for suffixes instead of prefixes.
+
 I originally copied this from here: https://github.com/ChorusOne/solanity
 
 Then I made the following changes:
