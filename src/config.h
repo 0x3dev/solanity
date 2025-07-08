@@ -1,8 +1,8 @@
 #ifndef VANITY_CONFIG
 #define VANITY_CONFIG
 
-static int const MAX_ITERATIONS = 100000;
-static int const STOP_AFTER_KEYS_FOUND = 100;
+static int const MAX_ITERATIONS = 1000000;
+static int const STOP_AFTER_KEYS_FOUND = 1000;
 
 // how many times a gpu thread generates a public key in one go
 __device__ const int ATTEMPTS_PER_EXECUTION = 100000;
